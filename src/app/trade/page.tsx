@@ -22,12 +22,12 @@ export default function TradePage() {
                 {/* Right Column: Trade Panel + Recent Trades */}
                 <div className="w-1/4 flex flex-col gap-4">
                     {/* Trade Panel */}
-                    <div className="bg-gray-50 p-4 rounded shadow-sm">
+                    <div className="bg-gray-50 p-4 rounded shadow-sm flex-1 flex flex-col">
                         <TradePanel />
                     </div>
 
                     {/* Recent Trades */}
-                    <div className="bg-gray-50 p-4 rounded shadow-sm flex-1">
+                    <div className="bg-gray-50 p-4 rounded shadow-sm h-48">
                         <RecentTrades />
                     </div>
                 </div>
