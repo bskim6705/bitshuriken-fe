@@ -27,7 +27,7 @@ export default function TradePage() {
                     </div>
 
                     {/* Recent Trades */}
-                    <div className="bg-gray-50 p-4 rounded shadow-sm h-48">
+                    <div className="bg-gray-50 rounded shadow-sm h-48">
                         <RecentTrades />
                     </div>
                 </div>

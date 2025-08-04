@@ -1,60 +1,70 @@
 "use client";
 
 import { useEffect, useState } from "react";
+import { Trade } from "@/types";
 
-interface RecentTrade {
-    id: number;
-    price: string;
-    qty: string;
-    time: number;
-    isBuyerMaker: boolean; // true → sell (red), false → buy (green)
-}
-
+/**
+ * Real-time trade history table.
+ * Subscribes to the backend WebSocket and renders the latest trades (max 100).
+ */
 export default function RecentTrades() {
-    const [trades, setTrades] = useState<RecentTrade[]>([]);
-    const [loading, setLoading] = useState<boolean>(true);
+    const [trades, setTrades] = useState<Trade[]>([]);
 
     useEffect(() => {
-        let cancelled = false;
-        async function fetchTrades() {
+        const socket = new WebSocket(`ws://${process.env.NEXT_PUBLIC_API_URL ?? "localhost:3001"}/trades`);
+
+        socket.onmessage = (event) => {
             try {
-                const res = await fetch("/api/mock/recentTrades?symbol=BTC:USDT&limit=1000", { cache: "no-cache" });
-                if (!res.ok) throw new Error(`Failed to fetch recent trades: ${res.status}`);
-                const data = (await res.json()) as RecentTrade[];
-                if (!cancelled) setTrades(data);
-            } catch (err) {
-                console.error("Failed to load recent trades", err);
-            } finally {
-                if (!cancelled) setLoading(false);
+                const trade: Trade = JSON.parse(event.data);
+                setTrades((prev) => {
+                    const next = [trade, ...prev];
+                    // Keep only the most recent 100 entries to avoid unbounded growth
+                    return next.slice(0, 100);
+                });
+            } catch {
+                console.warn("[RecentTrades] Invalid trade payload", event.data);
             }
-        }
-        fetchTrades();
+        };
+
+        socket.onerror = () => {
+            console.error("[RecentTrades] WebSocket error");
+        };
+
         return () => {
-            cancelled = true;
+            socket.close();
         };
     }, []);
 
+    const formatTime = (ts?: number) =>
+        ts
+            ? new Date(ts).toLocaleTimeString("en-US", {
+                  hour12: false,
+                  hour: "2-digit",
+                  minute: "2-digit",
+                  second: "2-digit",
+              })
+            : "-";
+
     return (
-        <div className="flex flex-col h-full">
-            <h2 className="text-lg font-semibold mb-2">Recent Trades</h2>
-            {loading ? (
-                <div className="text-gray-500 text-sm flex-1 flex items-center justify-center">Loading...</div>
-            ) : (
-                <div className="max-h-40 overflow-y-auto text-xs font-mono">
-                    <div className="grid grid-cols-3 gap-1 text-gray-500 pb-1 border-b border-gray-200 sticky top-0 bg-gray-50">
-                        <span className="text-right">Price (USDT)</span>
-                        <span className="text-right">Qty (BTC)</span>
-                        <span className="text-right">Time</span>
-                    </div>
-                    {trades.map((t) => (
-                        <div key={t.id} className="grid grid-cols-3 gap-1 py-px">
-                            <span className={`text-right ${t.isBuyerMaker ? "text-red-600" : "text-green-600"}`}>{parseFloat(t.price).toLocaleString()}</span>
-                            <span className="text-right">{parseFloat(t.qty).toFixed(6)}</span>
-                            <span className="text-right text-gray-500">{new Date(t.time).toLocaleTimeString()}</span>
-                        </div>
+        <div className="overflow-y-auto overflow-x-auto h-full text-xs">
+            <table className="min-w-full">
+                <thead className="sticky top-0 bg-gray-900 text-gray-400">
+                    <tr>
+                        <th className="px-2 py-1">Price</th>
+                        <th className="px-2 py-1">Amount</th>
+                        <th className="px-2 py-1">Time</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    {trades.map((t, idx) => (
+                        <tr key={idx} className="text-right text-gray-200 whitespace-nowrap">
+                            <td className={`px-2 py-1 ${t.maker.side === "BUY" ? "text-green-600" : "text-red-600"}`}>{t.price}</td>
+                            <td className="px-2 py-1 text-black">{t.qty}</td>
+                            <td className="px-2 py-1 text-black">{formatTime(t.timestamp)}</td>
+                        </tr>
                     ))}
-                </div>
-            )}
+                </tbody>
+            </table>
         </div>
     );
 }
