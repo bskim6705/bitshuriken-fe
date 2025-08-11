@@ -1,134 +1,128 @@
 "use client";
 
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useRef } from "react";
 // Using v5 API of lightweight-charts
-import { createChart, CandlestickSeries, HistogramSeries } from "lightweight-charts";
+import { createChart, CandlestickSeries, HistogramSeries, ColorType, UTCTimestamp, LineStyle, ISeriesApi } from "lightweight-charts";
+import { useKlines, INTERVALS } from "@/hooks/useKlines";
+import type { Kline } from "@/types";
 // minimal structural type to access setStretchFactor without relying on generics
 type PaneWithStretch = { setStretchFactor?: (factor: number) => void };
 
-// Raw kline array type as provided by backend (see README for details)
-// [ openTime, open, high, low, close, volume, closeTime, quoteAssetVol, trades, buyBaseVol, buyQuoteVol, ignore ]
-export type RawKline = [number, string, string, string, string, string, number, string, number, string, string, string];
-
-// Temporary stub data – will be replaced by real data fetched from backend
-const SAMPLE_DATA: RawKline[] = [[1499040000000, "0.01634790", "0.80000000", "0.01575800", "0.01577100", "148976.11427815", 1499644799999, "2434.19055334", 308, "1756.87402397", "28.46694368", "0"]];
-
-// Supported intervals for mock klines – must match file names inside /api/mock/klines
-const INTERVALS = ["1s", "1m", "3m", "5m", "15m", "30m", "1h", "2h", "4h", "6h", "8h", "12h", "1d", "3d", "1w", "1mo"] as const;
-
-type Interval = (typeof INTERVALS)[number];
-
 /**
- * Convert raw kline data coming from backend → lightweight-charts format.
+ * Kline object returned from backend.
+ * All numeric price/volume fields are strings to preserve precision.
  */
-function transformData(raw: RawKline[]) {
+// Kline type is imported from '@/types'
+
+// intervals are imported from useKlines
+
+/** Convert kline objects → lightweight-charts candlestick series data */
+function transformData(raw: Kline[]) {
     return raw.map((k) => ({
-        // lightweight-charts expects Unix timestamp in seconds
-        time: k[0] / 1000,
-        open: parseFloat(k[1]),
-        high: parseFloat(k[2]),
-        low: parseFloat(k[3]),
-        close: parseFloat(k[4]),
+        time: (k.openTime / 1000) as UTCTimestamp,
+        open: parseFloat(k.open),
+        high: parseFloat(k.high),
+        low: parseFloat(k.low),
+        close: parseFloat(k.close),
     }));
 }
 
-function transformVolumeData(raw: RawKline[]) {
-    return raw.map((k) => {
-        const open = parseFloat(k[1]);
-        const close = parseFloat(k[4]);
-        const up = close >= open;
-        return {
-            time: k[0] / 1000,
-            value: parseFloat(k[5]),
-            color: up ? "#26a69a" : "#ef5350",
-        };
-    });
-}
+// Volume series data is prepared inside the effect to use current theme colors
 
-export default function TradeChart() {
+// All data fetching and aggregation are handled by useKlines hook
+
+export default function TradeChart({ symbol = "BTCUSDT" }: { symbol?: string }) {
     const containerRef = useRef<HTMLDivElement>(null);
+    const chartRef = useRef<ReturnType<typeof createChart> | null>(null);
+    const candleSeriesRef = useRef<ISeriesApi<"Candlestick"> | null>(null);
+    const volumeSeriesRef = useRef<ISeriesApi<"Histogram"> | null>(null);
+    const themeRef = useRef({
+        bg: "#000000",
+        grid: "#1f1f1f",
+        text: "#cbd5e1",
+        up: "#26a69a",
+        down: "#ef5350",
+    });
 
-    // UI state – current selected interval
-    const [interval, setInterval] = useState<Interval>("1m");
+    const { klines, interval, setInterval } = useKlines(symbol);
 
-    // Fetched kline data (raw format coming from backend)
-    const [rawData, setRawData] = useState<RawKline[]>(SAMPLE_DATA);
-
-    // Fetch klines whenever interval changes
-    useEffect(() => {
-        let cancelled = false;
-        async function fetchKlines() {
-            try {
-                const res = await fetch(`/api/mock/klines?interval=${interval}`);
-                if (!res.ok) throw new Error(`Failed to fetch klines: ${res.status}`);
-                const json = (await res.json()) as RawKline[];
-                if (!cancelled) {
-                    setRawData(json);
-                }
-            } catch (e) {
-                // In case of error, keep sample data (no-op)
-                console.error(e);
-            }
-        }
-        fetchKlines();
-        return () => {
-            cancelled = true;
-        };
-    }, [interval]);
-
+    // Initialize chart once
     useEffect(() => {
         const container = containerRef.current;
         if (!container) return;
 
-        // Initial chart dimensions use the container size
+        // Read theme colors from CSS variables (Tailwind v4 @theme)
+        const root = getComputedStyle(document.documentElement);
+        themeRef.current = {
+            bg: (root.getPropertyValue("--color-chart-bg") || "#000000").trim(),
+            grid: (root.getPropertyValue("--color-chart-grid") || "#1f1f1f").trim(),
+            text: (root.getPropertyValue("--color-font-main") || "#cbd5e1").trim(),
+            up: (root.getPropertyValue("--color-up") || "#26a69a").trim(),
+            down: (root.getPropertyValue("--color-down") || "#ef5350").trim(),
+        };
+
         const chart = createChart(container, {
             width: container.clientWidth,
             height: container.clientHeight || 300,
-            layout: {
-                textColor: "#d1d4dc",
-                background: { type: "solid", color: "transparent" },
-            },
-            grid: {
-                vertLines: { color: "#2f3b50" },
-                horzLines: { color: "#2f3b50" },
-            },
-            timeScale: {
-                timeVisible: true,
-                secondsVisible: false,
-            },
-            attributionLogo: { visible: false },
+            layout: { textColor: themeRef.current.text, background: { type: ColorType.Solid, color: themeRef.current.bg } },
+            grid: { vertLines: { color: themeRef.current.grid }, horzLines: { color: themeRef.current.grid } },
+            timeScale: { timeVisible: true, secondsVisible: false },
         });
+        chartRef.current = chart;
 
-        const candlestickSeries = chart.addSeries(CandlestickSeries);
-        candlestickSeries.setData(transformData(rawData));
+        const cSeries = chart.addSeries(CandlestickSeries, {
+            upColor: themeRef.current.up,
+            downColor: themeRef.current.down,
+            borderUpColor: themeRef.current.up,
+            borderDownColor: themeRef.current.down,
+            wickUpColor: themeRef.current.up,
+            wickDownColor: themeRef.current.down,
+            priceLineVisible: true,
+            priceLineColor: themeRef.current.text,
+            priceLineWidth: 1,
+            priceLineStyle: LineStyle.Dashed,
+        });
+        candleSeriesRef.current = cSeries;
 
-        // Volume histogram in second pane (pane index 1)
-        const volumeSeries = chart.addSeries(
-            HistogramSeries,
-            {
-                priceFormat: { type: "volume" },
-            },
-            1 // paneIndex; creates pane if missing
-        );
-        volumeSeries.setData(transformVolumeData(rawData));
+        const vSeries = chart.addSeries(HistogramSeries, { priceFormat: { type: "volume" } }, 1);
+        volumeSeriesRef.current = vSeries;
 
         // Make volume pane shorter
         const panes = chart.panes();
         const volumePane = panes[1] as PaneWithStretch | undefined;
         volumePane?.setStretchFactor?.(0.3);
 
-        // Responsiveness
-        const handleResize = () => {
-            chart.applyOptions({ width: container.clientWidth });
-        };
+        const handleResize = () => chart.applyOptions({ width: container.clientWidth });
         window.addEventListener("resize", handleResize);
-
-        // Cleanup when component unmounts
         return () => {
             window.removeEventListener("resize", handleResize);
             chart.remove();
+            chartRef.current = null;
+            candleSeriesRef.current = null;
+            volumeSeriesRef.current = null;
         };
-    }, [rawData]);
+    }, []);
+
+    // Update series data when rawData changes
+    useEffect(() => {
+        candleSeriesRef.current?.setData(transformData(klines));
+        const vol = klines.map((k) => {
+            const open = parseFloat(k.open);
+            const close = parseFloat(k.close);
+            const up = close >= open;
+            return { time: (k.openTime / 1000) as UTCTimestamp, value: parseFloat(k.volume), color: up ? themeRef.current.up : themeRef.current.down };
+        });
+        volumeSeriesRef.current?.setData(vol as unknown as Parameters<typeof volumeSeriesRef.current.setData>[0]);
+
+        // Update current price line color based on last candle direction (same logic as volume color)
+        const last = klines[klines.length - 1];
+        if (last && candleSeriesRef.current) {
+            const open = parseFloat(last.open);
+            const close = parseFloat(last.close);
+            const up = close >= open;
+            candleSeriesRef.current.applyOptions({ priceLineColor: up ? themeRef.current.up : themeRef.current.down });
+        }
+    }, [klines]);
 
     return (
         <div className="flex flex-col h-full">

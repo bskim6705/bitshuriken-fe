@@ -1,39 +1,19 @@
 "use client";
 
-import { useEffect, useState } from "react";
-import { Trade } from "@/types";
+import { useEffect } from "react";
+import { useTrades, startTradesStream } from "@/store/trades";
 
 /**
  * Real-time trade history table.
  * Subscribes to the backend WebSocket and renders the latest trades (max 100).
  */
-export default function RecentTrades() {
-    const [trades, setTrades] = useState<Trade[]>([]);
-
+export default function RecentTrades({ symbol = "BTCUSDT" }: { symbol?: string }) {
+    // Start stream once; store is idempotent and keeps a single WS
     useEffect(() => {
-        const socket = new WebSocket(`ws://${process.env.NEXT_PUBLIC_API_URL ?? "localhost:3001"}/trades`);
-
-        socket.onmessage = (event) => {
-            try {
-                const trade: Trade = JSON.parse(event.data);
-                setTrades((prev) => {
-                    const next = [trade, ...prev];
-                    // Keep only the most recent 100 entries to avoid unbounded growth
-                    return next.slice(0, 100);
-                });
-            } catch {
-                console.warn("[RecentTrades] Invalid trade payload", event.data);
-            }
-        };
-
-        socket.onerror = () => {
-            console.error("[RecentTrades] WebSocket error");
-        };
-
-        return () => {
-            socket.close();
-        };
+        startTradesStream();
     }, []);
+
+    const trades = useTrades((s) => s.getTrades(symbol));
 
     const formatTime = (ts?: number) =>
         ts
@@ -50,17 +30,17 @@ export default function RecentTrades() {
             <table className="min-w-full">
                 <thead className="sticky top-0 bg-gray-900 text-gray-400">
                     <tr>
-                        <th className="px-2 py-1">Price</th>
-                        <th className="px-2 py-1">Amount</th>
-                        <th className="px-2 py-1">Time</th>
+                        <th className="text-left px-2 py-1">Price</th>
+                        <th className="text-right px-2 py-1">Amount</th>
+                        <th className="text-right px-2 py-1">Time</th>
                     </tr>
                 </thead>
                 <tbody>
                     {trades.map((t, idx) => (
                         <tr key={idx} className="text-right text-gray-200 whitespace-nowrap">
-                            <td className={`px-2 py-1 ${t.maker.side === "BUY" ? "text-green-600" : "text-red-600"}`}>{t.price}</td>
-                            <td className="px-2 py-1 text-black">{t.qty}</td>
-                            <td className="px-2 py-1 text-black">{formatTime(t.timestamp)}</td>
+                            <td className={`text-left px-2 py-1 ${t.maker.side === "BUY" ? "text-green-600" : "text-red-600"}`}>{t.price}</td>
+                            <td className="text-right px-2 py-1 text-chart">{t.qty}</td>
+                            <td className="text-right px-2 py-1 text-chart">{formatTime(t.timestamp)}</td>
                         </tr>
                     ))}
                 </tbody>
