@@ -1,14 +1,15 @@
-import OrderBook from "@/components/trade/OrderBook";
-import TradeChart from "@/components/trade/TradeChart";
-import TradePanel from "@/components/trade/TradePanel";
-import RecentTrades from "@/components/trade/RecentTrades";
-import TradeTabs from "@/components/trade/TradeTabs";
-import MarketTicker from "@/components/trade/MarketTicker";
+import OrderBook from '@/components/trade/OrderBook';
+import TradeChart from '@/components/trade/TradeChart';
+import TradePanel from '@/components/trade/TradePanel';
+import RecentTrades from '@/components/trade/RecentTrades';
+import TradeTabs from '@/components/trade/TradeTabs';
+import MarketTicker from '@/components/trade/MarketTicker';
 
 type Props = { params: { symbol?: string } };
 
-export default function SpotSymbolPage({ params }: Props) {
-    const symbol = (params.symbol ?? "BTCUSDT").toUpperCase();
+export default async function SpotSymbolPage({ params }: Props) {
+    const { symbol: raw } = await params;
+    const symbol = (raw ?? 'BTCUSDT').toUpperCase();
     return (
         <main className="min-h-screen flex flex-col p-3">
             {/* 위/아래 분리: 아래는 TradeTabs, 위 영역은 고정 높이 */}
